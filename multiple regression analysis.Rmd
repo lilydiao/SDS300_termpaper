@@ -1,0 +1,176 @@
+---
+title: "multiple regression analysis"
+author: "Lily Diao"
+date: "2023-03-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(e1071)
+library(caTools)
+library(class)
+library(car) 
+library(pROC)
+```
+
+# Reading Data Set
+```{r}
+cross_sectional<-read.csv("oasis_cross-sectional.csv")
+longitudinal<-read.csv("oasis_longitudinal.csv")
+```
+
+
+# Creating Response Variable
+```{r}
+data_na_removed<-na.omit(longitudinal)
+
+data_na_removed$group <- ifelse(data_na_removed$Group == "Demented", "1", "2")
+data_na_removed$group <- as.factor(data_na_removed$group)
+```
+
+# Building General Multiple Regression Model
+```{r}
+
+model2 <- glm(group~eTIV+nWBV+ASF+CDR+M.F+Age+MMSE+MR.Delay+EDUC+SES, data=data_na_removed, family = binomial)
+summary(model2)
+
+any(is.na(data_na_removed))
+```
+
+# Using VIF for Model Selection
+```{r}
+vif(model2)
+```
+
+# Train and Test Data on Finalized Model
+```{r}
+# create training and testing dataset
+split <- sample.split(data_na_removed, SplitRatio = 0.8)
+train_cl <- subset(data_na_removed, split == "TRUE")
+test_cl <- subset(data_na_removed, split == "FALSE")
+  
+model_3<-glm(group~M.F+Age+MMSE+nWBV, data=train_cl, family = binomial)
+summary(model_3)
+predictions <- predict(model_3, newdata = test_cl, type = "response")
+table(data = as.numeric(predictions > 0.5), reference = test_cl$group)
+```
+
+# Accuracy Calculation
+```{r}
+# Create the confusion matrix
+conf_mat <- matrix(c(23, 8, 3, 54), nrow = 2, byrow = TRUE)
+
+# Calculate the accuracy
+accuracy <- sum(diag(conf_mat)) / sum(conf_mat)
+
+# Calculate the balanced accuracy
+class_acc <- diag(conf_mat) / colSums(conf_mat)
+balanced_acc <- mean(class_acc)
+
+# Calculate the F1 score
+precision <- conf_mat[2, 2] / sum(conf_mat[, 2])
+recall <- conf_mat[2, 2] / sum(conf_mat[2, ])
+f1_score <- 2 * precision * recall / (precision + recall)
+
+# Print the results
+cat("Accuracy:", round(accuracy, 3), "\n")
+cat("Balanced accuracy:", round(balanced_acc, 3), "\n")
+cat("F1 score:", round(f1_score, 3), "\n")
+
+```
+
+```{r}
+confusion_matrix <- matrix(c(23, 8, 3, 54), nrow = 2, byrow = TRUE)
+colnames(confusion_matrix) <- c("Predicted Negative", "Predicted Positive")
+rownames(confusion_matrix) <- c("Actual Negative", "Actual Positive")
+
+# Compute ROC curve and AUC
+roc_obj <- roc(confusion_matrix[, 2], confusion_matrix[, 1])
+roc_auc <- auc(roc_obj)
+
+# Print AUC value
+cat("AUC:", roc_auc, "\n")
+
+# Plot ROC curve
+plot(roc_obj, main = "ROC Curve")
+```
+
+
+K Nearest Neighbor
+```{r}
+longitudinal_2<-longitudinal %>% 
+  select(MMSE, eTIV, nWBV, ASF, CDR)
+longitudinal_2<-na.omit(longitudinal_2)
+```
+
+```{r}
+install.packages("e1071")
+install.packages("caTools")
+install.packages("class")
+  
+# Loading package
+library(e1071)
+library(caTools)
+library(class)
+  
+# Splitting data into train
+# and test data
+split <- sample.split(longitudinal_2, SplitRatio = 0.7)
+train_cl <- subset(longitudinal_2, split == "TRUE")
+test_cl <- subset(longitudinal_2, split == "FALSE")
+  
+# Feature Scaling
+train_scale <- scale(train_cl[, 1:4])
+test_scale <- scale(test_cl[, 1:4])
+  
+# Fitting KNN Model 
+# to training dataset
+classifier_knn <- knn(train = train_scale,
+                      test = test_scale,
+                      cl = train_cl$Species,
+                      k = 1)
+classifier_knn
+  
+# Confusiin Matrix
+cm <- table(test_cl$Species, classifier_knn)
+cm
+```
+
+```{r}
+
+# Create the confusion matrix
+confusion_matrix <- matrix(c(18, 4, 10, 57), nrow = 2, byrow = TRUE)
+colnames(confusion_matrix) <- c("Predicted Negative", "Predicted Positive")
+rownames(confusion_matrix) <- c("Actual Negative", "Actual Positive")
+
+# Extract true positive and false positive rates
+true_positive <- confusion_matrix[2, 2]
+false_positive <- confusion_matrix[1, 2]
+
+# Compute true positive rate (Sensitivity) and false positive rate (1 - Specificity)
+true_positive_rate <- true_positive / (true_positive + confusion_matrix[2, 1])
+false_positive_rate <- false_positive / (false_positive + confusion_matrix[1, 1])
+
+# Create a data frame for the ROC curve
+roc_data <- data.frame(
+  "False Positive Rate" = false_positive_rate,
+  "True Positive Rate" = true_positive_rate
+)
+
+# Compute AUC (Area Under the Curve)
+roc_auc <- round(auc(roc_data$False.Positive.Rate, roc_data$True.Positive.Rate), 6)
+
+# Print AUC value
+cat("AUC:", roc_auc, "\n")
+
+# Plot ROC curve
+plot(roc_data, type = "l", main = "ROC Curve", xlab = "False Positive Rate", ylab = "True Positive Rate")
+
+
+```
+
